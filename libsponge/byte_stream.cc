@@ -13,17 +13,22 @@ ByteStream::ByteStream(const size_t capacity)
     : _m_data(),
       _m_capacity(capacity),
       _m_bytes_w(0),
-      _m_bytes_r(0) {}
+      _m_bytes_r(0),
+      _m_eof(false),
+      _m_sz(0),
+      _m_writable(true)
+    {}
 
 size_t ByteStream::write(const string &data) {
-    if (!_m_data.empty() && _m_data.front() == '\0')
+    if (input_ended())
         return data.size();
 
     std::size_t bw; 
     for (bw = 0; bw < data.size(); ++bw) {
-        _m_data.push_front(data[bw]);
-        if (data[bw] == '\0' || _m_data.size() == _m_capacity)
+        if (data[bw] == '\0' ||  _m_sz == _m_capacity)
             break;
+        _m_data.push_front(data[bw]);
+        if (data[bw] != '\0') ++_m_sz;
     }
     _m_bytes_w += bw;
     return bw;
@@ -45,13 +50,22 @@ string ByteStream::peek_output(const size_t len) const {
 
 //! \param[in] len bytes will be removed from the output side of the buffer
 void ByteStream::pop_output(const size_t len) { 
-    if (len >= _m_data.size()) {
-        _m_bytes_r += _m_data.size();
+    if (len >= _m_sz) {
+        if (_m_data.front() == '\0')
+            _m_eof = true;
+        _m_bytes_r += _m_sz; 
         _m_data.clear();
+        _m_sz = 0;
     } else { 
-        for (size_t i = 0; i < len; ++i)
+        for (size_t i = 0; i < len; ++i) {
+            if (_m_data.back() == '\0') {
+                _m_eof = true;
+            } else {
+                --_m_sz;
+            }
+            ++_m_bytes_r;
             _m_data.pop_back();
-        _m_bytes_r += len;
+        }
     }
 }
 
@@ -64,18 +78,23 @@ std::string ByteStream::read(const size_t len) {
     return res;
 }
 
-void ByteStream::end_input() { _m_data.push_front('\0'); }
+void ByteStream::end_input() { 
+    _m_writable = false;
+    if (buffer_empty()) 
+        _m_eof = true;
+    _m_data.push_front('\0'); 
+}
 
-bool ByteStream::input_ended() const { return !_m_data.empty() && _m_data.front() == '\0'; }
+bool ByteStream::input_ended() const { return !_m_writable; }
 
-size_t ByteStream::buffer_size() const { return _m_data.size(); }
+size_t ByteStream::buffer_size() const { return _m_sz; }
 
-bool ByteStream::buffer_empty() const { return _m_data.empty(); }
+bool ByteStream::buffer_empty() const { return _m_sz == 0; }
 
-bool ByteStream::eof() const { return !_m_data.empty() && _m_data.front() == '\0'; }
+bool ByteStream::eof() const { return _m_eof; }
 
 size_t ByteStream::bytes_written() const { return _m_bytes_w; }
 
 size_t ByteStream::bytes_read() const { return _m_bytes_r; }
 
-size_t ByteStream::remaining_capacity() const { return _m_capacity - _m_data.size(); }
+size_t ByteStream::remaining_capacity() const { return _m_capacity - _m_sz; }
