@@ -15,23 +15,18 @@ ByteStream::ByteStream(const size_t capacity)
       _m_bytes_w(0),
       _m_bytes_r(0),
       _m_eof(false),
-      _m_sz(0),
       _m_writable(true)
     {}
 
 size_t ByteStream::write(const string &data) {
     if (input_ended())
-        return data.size();
+        return 0;
 
-    std::size_t bw; 
-    for (bw = 0; bw < data.size(); ++bw) {
-        if (data[bw] == '\0' ||  _m_sz == _m_capacity)
-            break;
-        _m_data.push_front(data[bw]);
-        if (data[bw] != '\0') ++_m_sz;
-    }
-    _m_bytes_w += bw;
-    return bw;
+    size_t bytes_write = min(data.size(), remaining_capacity());
+    for (size_t i = 0; i < bytes_write; ++i) 
+        { _m_data.push_front(data[i]); }
+    _m_bytes_w += bytes_write;
+    return bytes_write;
 }
 
 //! \param[in] len bytes will be copied from the output side of the buffer
@@ -50,23 +45,13 @@ string ByteStream::peek_output(const size_t len) const {
 
 //! \param[in] len bytes will be removed from the output side of the buffer
 void ByteStream::pop_output(const size_t len) { 
-    if (len >= _m_sz) {
-        if (_m_data.front() == '\0')
-            _m_eof = true;
-        _m_bytes_r += _m_sz; 
-        _m_data.clear();
-        _m_sz = 0;
-    } else { 
-        for (size_t i = 0; i < len; ++i) {
-            if (_m_data.back() == '\0') {
-                _m_eof = true;
-            } else {
-                --_m_sz;
-            }
-            ++_m_bytes_r;
-            _m_data.pop_back();
-        }
-    }
+    size_t bytes_read = min(buffer_size(), len);
+    for (size_t i = 0; i < len; ++i)
+        { _m_data.pop_back(); }
+
+    if (_m_data.empty() && input_ended())
+        _m_eof = true;
+    _m_bytes_r += bytes_read;
 }
 
 //! Read (i.e., copy and then pop) the next "len" bytes of the stream
@@ -81,15 +66,14 @@ std::string ByteStream::read(const size_t len) {
 void ByteStream::end_input() { 
     _m_writable = false;
     if (buffer_empty()) 
-        _m_eof = true;
-    _m_data.push_front('\0'); 
+        { _m_eof = true; } 
 }
 
 bool ByteStream::input_ended() const { return !_m_writable; }
 
-size_t ByteStream::buffer_size() const { return _m_sz; }
+size_t ByteStream::buffer_size() const { return _m_data.size(); }
 
-bool ByteStream::buffer_empty() const { return _m_sz == 0; }
+bool ByteStream::buffer_empty() const { return _m_data.size() == 0; }
 
 bool ByteStream::eof() const { return _m_eof; }
 
@@ -97,4 +81,4 @@ size_t ByteStream::bytes_written() const { return _m_bytes_w; }
 
 size_t ByteStream::bytes_read() const { return _m_bytes_r; }
 
-size_t ByteStream::remaining_capacity() const { return _m_capacity - _m_sz; }
+size_t ByteStream::remaining_capacity() const { return _m_capacity - _m_data.size(); }

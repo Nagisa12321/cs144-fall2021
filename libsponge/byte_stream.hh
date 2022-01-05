@@ -17,7 +17,6 @@ class ByteStream {
     size_t _m_bytes_w;
     size_t _m_bytes_r;
     bool _m_eof;
-    size_t _m_sz; 
     bool _m_writable;
     // Hint: This doesn't need to be a sophisticated data structure at
     // all, but if any of your tests are taking longer than a second,
