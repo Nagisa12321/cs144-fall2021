@@ -11,7 +11,8 @@ using namespace std;
 //! \param n The input absolute 64-bit sequence number
 //! \param isn The initial sequence number
 WrappingInt32 wrap(uint64_t n, WrappingInt32 isn) {
-    uint32_t tmp = n % UINT32_MAX;
+    uint64_t round = static_cast<uint64_t>(UINT32_MAX) + 1;
+    uint32_t tmp = n % round;
     return WrappingInt32(tmp + isn.raw_value());
 }
 
@@ -36,7 +37,7 @@ uint64_t unwrap(WrappingInt32 n, WrappingInt32 isn, uint64_t checkpoint) {
         return first_num;
 
     uint64_t k1, k2;
-    k1 = static_cast<double>(checkpoint - first_num) / round;
+    k1 = static_cast<long double>(checkpoint - first_num) / round;
     k2 = k1 + 1;
     
     uint64_t r1, r2;
