@@ -69,3 +69,13 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
 size_t StreamReassembler::unassembled_bytes() const { return _unassembled; }
 
 bool StreamReassembler::empty() const { return _unassembled == 0; }
+
+string StreamReassembler::_real_string(const string &data, size_t index) const {
+    string real_string = data;
+    if (index <= _first_idx) {
+        if (data.size() <= _first_idx - index) { return ""; }
+        real_string = real_string.substr(_first_idx - index);
+    } else if (index + real_string.size() >= _capacity)
+        real_string = real_string.substr(0, _capacity - index);
+    return real_string;
+}

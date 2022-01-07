@@ -10,6 +10,7 @@
 //! \brief A class that assembles a series of excerpts from a byte stream (possibly out of order,
 //! possibly overlapping) into an in-order byte stream.
 class StreamReassembler {
+	friend class TCPReceiver;
   private:
     // Your code here -- add private members as necessary.
 
@@ -20,6 +21,8 @@ class StreamReassembler {
     size_t _first_idx;
     size_t _unassembled;
     size_t _eof_idx;
+
+    std::string _real_string(const std::string &data, size_t index) const;
 
   public:
     //! \brief Construct a `StreamReassembler` that will store up to `capacity` bytes.

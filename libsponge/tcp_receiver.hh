@@ -7,6 +7,7 @@
 #include "wrapping_integers.hh"
 
 #include <optional>
+#include <map>
 
 //! \brief The "receiver" part of a TCP implementation.
 
@@ -23,6 +24,8 @@ class TCPReceiver {
     WrappingInt32 _isn; 
     bool _isn_setted;
 	size_t _seq_len;
+    size_t _ack;
+    std::map<size_t, std::pair<size_t, size_t>> _m;
 
 public:
     //! \brief Construct a TCP receiver
@@ -34,7 +37,9 @@ public:
 		  _capacity(capacity),
 		  _isn(0),
 		  _isn_setted(false),
-		  _seq_len(0)
+		  _seq_len(0),
+          _ack(0),
+          _m()
 		  {}
 
     //! \name Accessors to provide feedback to the remote TCPSender
