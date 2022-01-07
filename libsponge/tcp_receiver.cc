@@ -8,6 +8,7 @@
 using namespace std;
 
 void TCPReceiver::segment_received(const TCPSegment &seg) {
+    bool accepted = false;
     // •
     // Set the Initial Sequence Number if necessary. The sequence number of the first-
     // arriving segment that has the SYN flag set is the initial sequence number. You’ll want
@@ -17,6 +18,7 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
     if (seg.header().syn && !_isn_setted) {
         _isn_setted = true;
         _isn = seg.header().seqno;
+        accepted = true;
     }
     // •
     // Push any data, or end-of-stream marker, to the StreamReassembler. If the
@@ -24,16 +26,23 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
     // is the last byte of the entire stream. Remember that the StreamReassembler expects
     // stream indexes starting at zero; you will have to unwrap the seqnos to produce these.
     // 
-    if (seg.payload().size() != 0) {
+    if (seg.payload().size() != 0 && _isn_setted) {
         uint64_t checkpoint = _reassembler.stream_out().bytes_read();
-        uint64_t index = unwrap(seg.header().seqno, _isn, checkpoint) - 1;
+        uint64_t tmp = unwrap(seg.header().seqno, _isn, checkpoint);
+        // A byte with invalid stream index should be ignored
+        if (tmp == 0) return; 
+        uint64_t index = tmp - 1;
         string data = seg.payload().copy();
         _reassembler.push_substring(data, index, false);
+        accepted = true;
     } 
-    if (seg.header().fin) 
+    if (seg.header().fin && _isn_setted) {
         _reassembler.stream_out().end_input();
+        accepted = true;
+    }
 
-    _seq_len += seg.length_in_sequence_space() - seg.payload().size();
+    if (accepted)
+        _seq_len += seg.length_in_sequence_space() - seg.payload().size();
 }
 
 optional<WrappingInt32> TCPReceiver::ackno() const { 
