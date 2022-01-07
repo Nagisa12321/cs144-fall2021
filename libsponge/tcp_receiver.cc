@@ -30,13 +30,13 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
         uint64_t checkpoint = _reassembler.stream_out().bytes_read();
         uint64_t tmp = unwrap(seg.header().seqno, _isn, checkpoint);
         // A byte with invalid stream index should be ignored
-        if (tmp == 0) return; 
-        uint64_t index = tmp - 1;
+        if (tmp < _seq_len) return; 
+        uint64_t index = tmp - _seq_len;
         string data = seg.payload().copy();
-        _reassembler.push_substring(data, index, false);
+        if (seg.header().fin) _reassembler.push_substring(data, index, true);
+        else _reassembler.push_substring(data, index, false);
         accepted = true;
-    } 
-    if (seg.header().fin && _isn_setted) {
+    } else if (seg.header().fin && _isn_setted) {
         _reassembler.stream_out().end_input();
         accepted = true;
     }
