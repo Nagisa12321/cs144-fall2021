@@ -81,8 +81,8 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // delete the _segment_queue that seqno is smaller than ackno
     uint64_t uw = unwrap(ackno, _isn, 0);
     uint64_t real_seqno = uw - 1; 
-    while (!_segments_flight.empty() && uw != 0) {
-        uint64_t first_seqno = unwrap(_segments_flight.begin()->second.header().seqno, _isn, 0x0);
+    while (!_segments_flight.empty() && uw != 0 && real_seqno < _next_seqno) {
+        uint64_t first_seqno = unwrap(_segments_flight.front().second.header().seqno, _isn, 0x0);
         if (first_seqno > real_seqno) break;
 
         _segments_flight.pop_front();
