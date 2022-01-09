@@ -19,10 +19,11 @@ TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const s
     , _initial_retransmission_timeout{retx_timeout}
     , _stream(capacity)
     , _segments_flight()
-    , _window_size(0) 
+    , _window_size(1) 
     , _retransmission_timeout(retx_timeout)
     , _nowtime(0) 
-    , _consecutive_retransmissions(0) {}
+    , _consecutive_retransmissions(0) 
+    , _syn_send(false) {}
 
 uint64_t TCPSender::bytes_in_flight() const { 
     uint64_t res = 0;
@@ -35,27 +36,35 @@ void TCPSender::fill_window() {
     // The TCPSender is asked to fill the window : it reads from its input ByteStream and
     // sends as many bytes as possible in the form of TCPSegments, as long as there are new
     // bytes to be read and space available in the window.
+    if (!_syn_send) {
+        TCPSegment seg;
+        seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
+        seg.header().syn = true;
+        _send_seg(seg);
 
-    // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
-    // window. Make each individual TCPSegment as big as possible, but no bigger than the
-    // value given by TCPConfig::MAX PAYLOAD SIZE (1452 bytes).
+        _syn_send = true;
+    } else {
+        if (_stream.buffer_empty()) return;
+        // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
+        // window. Make each individual TCPSegment as big as possible, but no bigger than the
+        // value given by TCPConfig::MAX PAYLOAD SIZE (1452 bytes).
 
-    // You can use the TCPSegment::length_in_sequence_space() method to count the total
-    // number of sequence numbers occupied by a segment. Remember that the SYN and
-    // FIN flags also occupy a sequence number each, which means that they occupy space in
-    // the window
+        // You can use the TCPSegment::length_in_sequence_space() method to count the total
+        // number of sequence numbers occupied by a segment. Remember that the SYN and
+        // FIN flags also occupy a sequence number each, which means that they occupy space in
+        // the window
 
-    // checkout the max bytes can be setted in the TCPSegment struct
-    TCPSegment seg;
-    seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
-    size_t header_sz = seg.length_in_sequence_space();
-    // send_size
-    size_t data_sz = std::min(_window_size - header_sz, TCPConfig::MAX_PAYLOAD_SIZE);
-    if (data_sz != 0) {
-        data_sz = std::min(data_sz, _stream.buffer_size());
-        seg.payload() = _stream.peek_output(data_sz);
-        _stream.pop_output(data_sz);
-
+        // checkout the max bytes can be setted in the TCPSegment struct
+        TCPSegment seg;
+        seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
+        size_t header_sz = seg.length_in_sequence_space();
+        // send_size
+        size_t data_sz = std::min(_window_size - header_sz, TCPConfig::MAX_PAYLOAD_SIZE);
+        if (data_sz != 0) {
+            data_sz = std::min(data_sz, _stream.buffer_size());
+            seg.payload() = _stream.peek_output(data_sz);
+            _stream.pop_output(data_sz);
+        }
         _send_seg(seg);
     }
 }
@@ -70,8 +79,9 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // TCPSender should fill the window again if new space has opened up.
 
     // delete the _segment_queue that seqno is smaller than ackno
-    uint64_t real_seqno = unwrap(ackno, _isn, 0) - 1;
-    while (!_segments_flight.empty()) {
+    uint64_t uw = unwrap(ackno, _isn, 0);
+    uint64_t real_seqno = uw - 1; 
+    while (!_segments_flight.empty() && uw != 0) {
         uint64_t first_seqno = unwrap(_segments_flight.begin()->second.header().seqno, _isn, 0x0);
         if (first_seqno > real_seqno) break;
 

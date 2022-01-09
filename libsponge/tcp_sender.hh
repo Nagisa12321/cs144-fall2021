@@ -41,6 +41,7 @@ class TCPSender {
     unsigned int _retransmission_timeout;
     uint64_t _nowtime;
     unsigned int _consecutive_retransmissions;
+    bool _syn_send;
 
     void _send_seg(const TCPSegment &seg);
   public:
