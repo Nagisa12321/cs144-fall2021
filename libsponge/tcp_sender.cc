@@ -23,7 +23,8 @@ TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const s
     , _retransmission_timeout(retx_timeout)
     , _nowtime(0) 
     , _consecutive_retransmissions(0) 
-    , _syn_send(false) {}
+    , _syn_send(false)
+    , _fin_send(false) {}
 
 uint64_t TCPSender::bytes_in_flight() const { 
     uint64_t res = 0;
@@ -44,6 +45,16 @@ void TCPSender::fill_window() {
 
         _syn_send = true;
     } else {
+        // if the stream has been closed input
+        // should send a fin segment...
+        if (_stream.input_ended() && !_fin_send) {
+            TCPSegment fin;
+            fin.header().fin = true;
+            fin.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
+            _send_seg(fin);
+            _fin_send = true;
+        }
+
         if (_stream.buffer_empty()) return;
         // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
         // window. Make each individual TCPSegment as big as possible, but no bigger than the
@@ -116,11 +127,10 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     //      ii. Double the value of RTO. This is called “exponential backoff”—it slows down
     //      retransmissions on lousy networks to avoid further gumming up the works.
     uint64_t first_send_time = _segments_flight.front().first;
-    if (_nowtime - first_send_time > _retransmission_timeout) {
+    if (_nowtime - first_send_time >= _retransmission_timeout) {
         if (_window_size != 0) {
             // pop the segment, and resend it 
             TCPSegment seg = _segments_flight.front().second; 
-            _segments_flight.pop_front();
 
             _segments_out.push(seg);
             _segments_flight.front().first = _nowtime;
