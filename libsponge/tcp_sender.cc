@@ -45,7 +45,7 @@ void TCPSender::fill_window() {
             _syn_send = true;
     } else {
 
-        if (!_stream.buffer_empty()) {
+        while (!_stream.buffer_empty()) {
             // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
             // window. Make each individual TCPSegment as big as possible, but no bigger than the
             // value given by TCPConfig::MAX PAYLOAD SIZE (1452 bytes).
@@ -58,24 +58,17 @@ void TCPSender::fill_window() {
             // checkout the max bytes can be setted in the TCPSegment struct
             TCPSegment seg;
             seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
-            bool with_fin = false;
-            if (_stream.input_ended() && !_fin_send) {
-                seg.header().fin = true;
-                with_fin = true;
-            }
-            size_t header_sz = seg.length_in_sequence_space();
-            // send_size
-            size_t data_sz;
-            if (header_sz + bytes_in_flight() > _window_size)  data_sz = 0;
-            else data_sz = std::min(_window_size - header_sz - bytes_in_flight(), TCPConfig::MAX_PAYLOAD_SIZE);
+            size_t data_sz = std::min(_window_size  - bytes_in_flight(), TCPConfig::MAX_PAYLOAD_SIZE);
             if (data_sz != 0) {
                 data_sz = std::min(data_sz, _stream.buffer_size());
                 seg.payload() = _stream.peek_output(data_sz);
                 _stream.pop_output(data_sz);
-                _send_seg(seg);
-                if (with_fin)
+                if (_stream.input_ended() && !_fin_send && data_sz + bytes_in_flight() + 1 <= _window_size) {
+                    seg.header().fin = true;
                     _fin_send = true;
-            }
+                }
+                _send_seg(seg);
+            } else break;
         }
 
         // if the stream has been closed input
@@ -100,20 +93,30 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // TCPSender should fill the window again if new space has opened up.
 
     // delete the _segment_queue that seqno is smaller than ackno
-    uint64_t uw = unwrap(ackno, _isn, 0);
-    uint64_t real_seqno = uw - 1; 
-    while (!_segments_flight.empty() && uw != 0 && real_seqno < _next_seqno) {
-        uint64_t first_seqno = unwrap(_segments_flight.front().second.header().seqno, _isn, 0x0);
-        if (first_seqno > real_seqno) break;
+    uint64_t real_ackno = unwrap(ackno, _isn, 0);
+    // uint64_t real_seqno = uw - 1; 
+    bool pop_segment = false;
+    while (!_segments_flight.empty() && real_ackno <= _next_seqno) {
+        uint64_t first_seqno = unwrap(_segments_flight.front().second.header().seqno + 
+            _segments_flight.front().second.length_in_sequence_space(), _isn, 0x0);
+        if (real_ackno < first_seqno) break;
 
         _segments_flight.pop_front();
+        pop_segment = true;
     }
 
     // reset the window size...
     _window_size = window_size;
 
-    // reset it to zero. 
-    _consecutive_retransmissions = 0;
+    if (pop_segment) {
+        // reset it to zero. 
+        _consecutive_retransmissions = 0;
+        // set it to init value ...    
+        _retransmission_timeout = _initial_retransmission_timeout;
+        // should set all the queue's time is _nowtime ....
+        for (auto &entry : _segments_flight) 
+            { entry.first = _nowtime; }
+    }
 } 
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
