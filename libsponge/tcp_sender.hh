@@ -43,6 +43,7 @@ class TCPSender {
     unsigned int _consecutive_retransmissions;
     bool _syn_send;
     bool _fin_send;
+    bool _zero_window;
 
     bool _send_seg(const TCPSegment &seg);
   public:

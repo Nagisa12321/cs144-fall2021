@@ -24,7 +24,8 @@ TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const s
     , _nowtime(0) 
     , _consecutive_retransmissions(0) 
     , _syn_send(false)
-    , _fin_send(false) {}
+    , _fin_send(false) 
+    , _zero_window(false) {}
 
 uint64_t TCPSender::bytes_in_flight() const { 
     uint64_t res = 0;
@@ -105,8 +106,17 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         pop_segment = true;
     }
 
+    // When filling window, treat a '0' window 
+    // size as equal to '1' but don't back off RTO
+    if (window_size == 0) {
+        _zero_window = true;
+        _window_size = 1;
+        return;
+    }
+
     // reset the window size...
     _window_size = window_size;
+    _zero_window = false;
 
     if (pop_segment) {
         // reset it to zero. 
@@ -141,12 +151,12 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     //      retransmissions on lousy networks to avoid further gumming up the works.
     uint64_t first_send_time = _segments_flight.front().first;
     if (_nowtime - first_send_time >= _retransmission_timeout) {
-        if (_window_size != 0) {
-            // pop the segment, and resend it 
-            TCPSegment seg = _segments_flight.front().second; 
+        // pop the segment, and resend it 
+        TCPSegment seg = _segments_flight.front().second; 
 
-            _segments_out.push(seg);
-            _segments_flight.front().first = _nowtime;
+        _segments_out.push(seg);
+        _segments_flight.front().first = _nowtime;
+        if (!_zero_window) {
             _retransmission_timeout <<= 1;
             ++_consecutive_retransmissions;
         }
