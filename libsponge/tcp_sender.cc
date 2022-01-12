@@ -41,42 +41,52 @@ void TCPSender::fill_window() {
         TCPSegment seg;
         seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
         seg.header().syn = true;
-        _send_seg(seg);
-
-        _syn_send = true;
+        if (_send_seg(seg))
+            _syn_send = true;
     } else {
+
+        if (!_stream.buffer_empty()) {
+            // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
+            // window. Make each individual TCPSegment as big as possible, but no bigger than the
+            // value given by TCPConfig::MAX PAYLOAD SIZE (1452 bytes).
+
+            // You can use the TCPSegment::length_in_sequence_space() method to count the total
+            // number of sequence numbers occupied by a segment. Remember that the SYN and
+            // FIN flags also occupy a sequence number each, which means that they occupy space in
+            // the window
+
+            // checkout the max bytes can be setted in the TCPSegment struct
+            TCPSegment seg;
+            seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
+            bool with_fin = false;
+            if (_stream.input_ended() && !_fin_send) {
+                seg.header().fin = true;
+                with_fin = true;
+            }
+            size_t header_sz = seg.length_in_sequence_space();
+            // send_size
+            size_t data_sz;
+            if (header_sz + bytes_in_flight() > _window_size)  data_sz = 0;
+            else data_sz = std::min(_window_size - header_sz - bytes_in_flight(), TCPConfig::MAX_PAYLOAD_SIZE);
+            if (data_sz != 0) {
+                data_sz = std::min(data_sz, _stream.buffer_size());
+                seg.payload() = _stream.peek_output(data_sz);
+                _stream.pop_output(data_sz);
+                _send_seg(seg);
+                if (with_fin)
+                    _fin_send = true;
+            }
+        }
+
         // if the stream has been closed input
         // should send a fin segment...
         if (_stream.input_ended() && !_fin_send) {
             TCPSegment fin;
             fin.header().fin = true;
             fin.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
-            _send_seg(fin);
-            _fin_send = true;
+            if (_send_seg(fin))
+                _fin_send = true;
         }
-
-        if (_stream.buffer_empty()) return;
-        // You’ll want to make sure that every TCPSegment you send fits fully inside the receiver’s
-        // window. Make each individual TCPSegment as big as possible, but no bigger than the
-        // value given by TCPConfig::MAX PAYLOAD SIZE (1452 bytes).
-
-        // You can use the TCPSegment::length_in_sequence_space() method to count the total
-        // number of sequence numbers occupied by a segment. Remember that the SYN and
-        // FIN flags also occupy a sequence number each, which means that they occupy space in
-        // the window
-
-        // checkout the max bytes can be setted in the TCPSegment struct
-        TCPSegment seg;
-        seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
-        size_t header_sz = seg.length_in_sequence_space();
-        // send_size
-        size_t data_sz = std::min(_window_size - header_sz, TCPConfig::MAX_PAYLOAD_SIZE);
-        if (data_sz != 0) {
-            data_sz = std::min(data_sz, _stream.buffer_size());
-            seg.payload() = _stream.peek_output(data_sz);
-            _stream.pop_output(data_sz);
-        }
-        _send_seg(seg);
     }
 }
 
@@ -158,12 +168,15 @@ void TCPSender::send_empty_segment() {
     // kept track of as “outstanding” and won’t ever be retransmitted.
 }
 
-void TCPSender::_send_seg(const TCPSegment &seg) {
+bool TCPSender::_send_seg(const TCPSegment &seg) {
+    if (bytes_in_flight() + seg.length_in_sequence_space() > _window_size) 
+        { return false; }
+
     // push to the queue... 
     _segments_out.push(seg);
-
     // setting the next_seq and the set for ack
     _segments_flight.push_back({_nowtime, seg});
-
     _next_seqno += seg.length_in_sequence_space();
+
+    return true;
 }
