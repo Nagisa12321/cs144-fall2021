@@ -16,10 +16,17 @@ class TCPConnection {
     //! outbound queue of segments that the TCPConnection wants sent
     std::queue<TCPSegment> _segments_out{};
 
+    uint64_t _nowtime;
+    uint64_t _last_received_time;
+    bool _connection_killed; 
+
     //! Should the TCPConnection stay active (and keep ACKing)
     //! for 10 * _cfg.rt_timeout milliseconds after both streams have ended,
     //! in case the remote TCPConnection doesn't know we've received its whole stream?
     bool _linger_after_streams_finish{true};
+
+    void _kill_connection();
+    void _send_segments_to_internet();
 
   public:
     //! \name "Input" interface for the writer
@@ -81,7 +88,11 @@ class TCPConnection {
     //!@}
 
     //! Construct a new connection from a configuration
-    explicit TCPConnection(const TCPConfig &cfg) : _cfg{cfg} {}
+    explicit TCPConnection(const TCPConfig &cfg) 
+      : _cfg{cfg} 
+      , _nowtime(0) 
+      , _last_received_time(0) 
+      , _connection_killed(false) {}
 
     //! \name construction and destruction
     //! moving is allowed; copying is disallowed; default construction not possible

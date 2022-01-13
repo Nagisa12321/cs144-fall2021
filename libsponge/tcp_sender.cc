@@ -177,6 +177,8 @@ void TCPSender::send_empty_segment() {
     TCPSegment seg;
     seg.header().seqno = WrappingInt32(_next_seqno + _isn.raw_value());
     _next_seqno += seg.length_in_sequence_space();
+
+    _segments_out.push(seg);
     // Note: a segment like this one, which occupies no sequence numbers, doesn’t need to be
     // kept track of as “outstanding” and won’t ever be retransmitted.
 }
